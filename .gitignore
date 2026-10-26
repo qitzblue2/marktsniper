@@ -1,3 +1,7 @@
 __pycache__/
 *.db
 .venv/
+local.properties
+.gradle/
+build/
+app/build/
