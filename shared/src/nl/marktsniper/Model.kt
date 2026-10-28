@@ -1,11 +1,11 @@
 package nl.marktsniper
 
-import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.Properties
 
 val ALL_PLATFORMS = listOf("marktplaats", "2dehands", "vinted")
 
@@ -99,18 +99,24 @@ object Store {
     private val _running = MutableStateFlow(true)
     val running: StateFlow<Boolean> = _running
 
+    private val props = Properties()
+
     @Synchronized
-    fun init(ctx: Context) {
+    fun init(dataDir: File) {
         if (::dir.isInitialized) return
-        dir = ctx.filesDir
+        dir = dataDir.apply { mkdirs() }
         _watches.value = read("watches.json").map { Watch.from(it) }
         _hits.value = read("hits.json").map { Hit.from(it) }
-        val p = prefs(ctx)
-        _interval.value = p.getInt("interval", 2)
-        _running.value = p.getBoolean("running", true)
+        File(dir, "settings.properties").takeIf { it.exists() }?.reader()?.use(props::load)
+        _interval.value = props.getProperty("interval", "2").toInt()
+        _running.value = props.getProperty("running", "true").toBoolean()
     }
 
-    private fun prefs(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    @Synchronized
+    private fun saveProp(key: String, value: Any) {
+        props.setProperty(key, value.toString())
+        File(dir, "settings.properties").writer().use { props.store(it, null) }
+    }
 
     private fun read(name: String): List<JSONObject> {
         val f = File(dir, name)
@@ -155,14 +161,14 @@ object Store {
         return if (current.primed) fresh else emptyList()
     }
 
-    fun setInterval(ctx: Context, minutes: Int) {
+    fun setInterval(minutes: Int) {
         _interval.value = minutes
-        prefs(ctx).edit().putInt("interval", minutes).apply()
+        saveProp("interval", minutes)
     }
 
-    fun setRunning(ctx: Context, on: Boolean) {
+    fun setRunning(on: Boolean) {
         _running.value = on
-        prefs(ctx).edit().putBoolean("running", on).apply()
+        saveProp("running", on)
     }
 
     private fun persist() {

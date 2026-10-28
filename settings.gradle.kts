@@ -5,4 +5,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "MarktSniper"
-include(":app")
+include(":app", ":desktop")

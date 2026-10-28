@@ -32,15 +32,15 @@ class SnipeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Store.init(this)
+        Store.init(filesDir)
         Notifier.channels(this)
         val n = Notifier.status(this, "Zoekt op de achtergrond…")
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
-        if (intent?.action == ACTION_NOW) scope.launch { checkAll(this@SnipeService) }
+        if (intent?.action == ACTION_NOW) scope.launch { Sniper.checkAll { w, h -> Notifier.deal(this@SnipeService, w, h) } }
         if (loop?.isActive != true) loop = scope.launch {
             while (isActive) {
-                checkAll(this@SnipeService)
+                Sniper.checkAll { w, h -> Notifier.deal(this@SnipeService, w, h) }
                 delay(Store.intervalMinutes.value * 60_000L)
             }
         }
@@ -58,22 +58,12 @@ class SnipeService : Service() {
         }
 
         fun stop(ctx: Context) = ctx.stopService(Intent(ctx, SnipeService::class.java))
-
-        suspend fun checkAll(ctx: Context) {
-            for (w in Store.watches.value.filter { it.active }) checkOne(ctx, w)
-        }
-
-        suspend fun checkOne(ctx: Context, w: Watch) {
-            val (found, err) = Scrapers.search(w)
-            Store.addHits(w, found, err).take(5).forEach { Notifier.deal(ctx, w, it) }
-            delay(1500)
-        }
     }
 }
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        Store.init(ctx)
+        Store.init(ctx.filesDir)
         if (Store.running.value) SnipeService.start(ctx)
     }
 }

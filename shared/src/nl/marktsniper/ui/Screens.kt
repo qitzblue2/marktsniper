@@ -1,11 +1,5 @@
 package nl.marktsniper.ui
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.PowerManager
-import android.provider.Settings
-import android.text.format.DateUtils
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,17 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import nl.marktsniper.*
 
 @Composable
@@ -98,7 +88,7 @@ private fun Header(title: String, sub: String? = null) {
 
 @Composable
 private fun LiveDot() {
-    val on by Store.running.collectAsStateWithLifecycle()
+    val on by Store.running.collectAsState()
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(if (on) Green else Mute))
         Spacer(Modifier.width(6.dp))
@@ -108,10 +98,10 @@ private fun LiveDot() {
 
 @Composable
 fun HitsScreen(filter: Long?, onFilter: (Long?) -> Unit) {
-    val hits by Store.hits.collectAsStateWithLifecycle()
-    val watches by Store.watches.collectAsStateWithLifecycle()
+    val hits by Store.hits.collectAsState()
+    val watches by Store.watches.collectAsState()
     var cheapFirst by rememberSaveable { mutableStateOf(false) }
-    val ctx = LocalContext.current
+    val platform = LocalPlatform.current
     val list = hits.filter { filter == null || it.watchId == filter }
         .let { if (cheapFirst) it.sortedBy { h -> h.price } else it }
 
@@ -125,7 +115,7 @@ fun HitsScreen(filter: Long?, onFilter: (Long?) -> Unit) {
         if (list.isEmpty()) Empty(if (watches.isEmpty()) "Maak je eerste snipe aan.\nTik op ‘Nieuwe snipe’." else "Nog niks gevonden.\nWe blijven zoeken 👀")
         else LazyVerticalGrid(GridCells.Adaptive(160.dp), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(list, key = { it.watchId.toString() + it.id }) { h -> HitCard(h) { open(ctx, h.url) } }
+            items(list, key = { it.watchId.toString() + it.id }) { h -> HitCard(h) { platform.openUrl(h.url) } }
         }
     }
 }
@@ -144,7 +134,7 @@ private fun HitCard(h: Hit, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = Panel, border = BorderStroke(1.dp, Line)) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Panel2)) {
-                AsyncImage(h.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                LocalPlatform.current.HitImage(h.image, Modifier.fillMaxSize())
                 Badge(platformLabel(h.platform), platformColor(h.platform), Modifier.align(Alignment.TopStart))
                 if (h.notified && System.currentTimeMillis() - h.foundAt < 3_600_000)
                     Badge("NIEUW", Green, Modifier.align(Alignment.TopEnd), Color(0xFF03140C))
@@ -181,8 +171,8 @@ private fun Empty(text: String) {
 
 @Composable
 fun WatchesScreen(onEdit: (Watch) -> Unit, onOpen: (Long) -> Unit, onPreset: (Watch) -> Unit) {
-    val watches by Store.watches.collectAsStateWithLifecycle()
-    val hits by Store.hits.collectAsStateWithLifecycle()
+    val watches by Store.watches.collectAsState()
+    val hits by Store.hits.collectAsState()
     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
         item { Header("Snipes", "${watches.count { it.active }} actief") }
         item {
@@ -217,8 +207,7 @@ fun WatchesScreen(onEdit: (Watch) -> Unit, onOpen: (Long) -> Unit, onPreset: (Wa
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun WatchEditor(initial: Watch, onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val platform = LocalPlatform.current
     val isNew = Store.watches.value.none { it.id == initial.id }
     var name by remember { mutableStateOf(initial.name) }
     var query by remember { mutableStateOf(initial.query) }
@@ -283,8 +272,7 @@ fun WatchEditor(initial: Watch, onDismiss: () -> Unit) {
                         minPrice = range.start.toInt(), maxPrice = range.endInclusive.toInt(),
                         platforms = ALL_PLATFORMS.filter { it in platforms }, categoryId = category.id, active = true)
                     Store.saveWatch(w)
-                    scope.launch(Dispatchers.IO) { SnipeService.checkOne(ctx.applicationContext, w) }
-                    if (Store.running.value) SnipeService.start(ctx)
+                    platform.checkSoon(w)
                     onDismiss()
                 }, Alignment.Center) {
                 Text(if (isNew) "🎯  Start met snipen" else "Opslaan", fontWeight = FontWeight.Bold, color = Color(0xFF1A0D05), fontSize = 16.sp)
@@ -314,9 +302,9 @@ private fun PriceBox(value: Int, modifier: Modifier, onChange: (Int) -> Unit) {
 
 @Composable
 fun SettingsScreen() {
-    val ctx = LocalContext.current
-    val running by Store.running.collectAsStateWithLifecycle()
-    val interval by Store.intervalMinutes.collectAsStateWithLifecycle()
+    val platform = LocalPlatform.current
+    val running by Store.running.collectAsState()
+    val interval by Store.intervalMinutes.collectAsState()
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -325,42 +313,32 @@ fun SettingsScreen() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Op de achtergrond zoeken", fontWeight = FontWeight.Bold)
-                    Text("Blijft zoeken als de app dicht is en na herstart", color = Mute, fontSize = 13.sp)
+                    Text("Blijft zoeken als de app dicht is", color = Mute, fontSize = 13.sp)
                 }
                 Switch(running, {
-                    Store.setRunning(ctx, it)
-                    if (it) SnipeService.start(ctx) else SnipeService.stop(ctx)
+                    Store.setRunning(it)
+                    platform.setBackground(it)
                 }, colors = SwitchDefaults.colors(checkedTrackColor = Accent))
             }
         }
         Card {
             Text("Elke $interval min zoeken", fontWeight = FontWeight.Bold)
             Text("Sneller = eerder bij een koopje, maar meer batterij", color = Mute, fontSize = 13.sp)
-            Slider(interval.toFloat(), { Store.setInterval(ctx, it.toInt()) }, valueRange = 1f..30f, steps = 28,
+            Slider(interval.toFloat(), { Store.setInterval(it.toInt()) }, valueRange = 1f..30f, steps = 28,
                 colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent, inactiveTrackColor = Line))
         }
-        Card {
-            Text("Batterijbesparing uitzetten", fontWeight = FontWeight.Bold)
-            Text("Aanbevolen: anders kan Android de app stoppen en mis je meldingen.", color = Mute, fontSize = 13.sp)
-            Spacer(Modifier.height(10.dp))
-            val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
-            OutlinedButton({
-                ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
-            }, enabled = !pm.isIgnoringBatteryOptimizations(ctx.packageName)) {
-                Text(if (pm.isIgnoringBatteryOptimizations(ctx.packageName)) "✓ Staat al uit" else "Uitzetten")
-            }
-        }
+        platform.ExtraSettings()
         Card {
             Text("Meldingen testen", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton({
-                    Notifier.deal(ctx, Watch(name = "Test", query = ""), Hit("test", 0, "marktplaats",
+                    platform.notifyDeal(Watch(name = "Test", query = ""), Hit("test", 0, "marktplaats",
                         "Dit is een testmelding van MarktSniper", 199.0, "https://www.marktplaats.nl", null, ""))
                 }) { Text("Testmelding") }
                 Button({
                     busy = true
-                    scope.launch { withContext(Dispatchers.IO) { SnipeService.checkAll(ctx.applicationContext) }; busy = false }
+                    scope.launch(Dispatchers.IO) { Sniper.checkAll(platform::notifyDeal); busy = false }
                 }, enabled = !busy) { Text(if (busy) "Bezig…" else "Nu alles checken") }
             }
         }
@@ -370,12 +348,21 @@ fun SettingsScreen() {
 }
 
 @Composable
+fun SettingsCard(content: @Composable ColumnScope.() -> Unit) = Card(content)
+
+@Composable
 private fun Card(content: @Composable ColumnScope.() -> Unit) {
     Surface(Modifier.fillMaxWidth().padding(16.dp, 6.dp), RoundedCornerShape(16.dp), color = Panel, border = BorderStroke(1.dp, Line)) {
         Column(Modifier.padding(16.dp), content = content)
     }
 }
 
-private fun ago(t: Long) = DateUtils.getRelativeTimeSpanString(t, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
-
-private fun open(ctx: Context, url: String) = ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+private fun ago(t: Long): String {
+    val m = (System.currentTimeMillis() - t) / 60_000
+    return when {
+        m < 1 -> "zojuist"
+        m < 60 -> "$m min geleden"
+        m < 1440 -> "${m / 60} uur geleden"
+        else -> "${m / 1440} dagen geleden"
+    }
+}

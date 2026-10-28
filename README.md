@@ -1,8 +1,18 @@
-# 🎯 MarktSniper (Android-app)
+# 🎯 MarktSniper
 
-Android-app die automatisch zoekt op **Marktplaats**, **2dehands** en **Vinted** en je een melding stuurt zodra er een koopje opstaat.
+App voor Android en je laptop (Windows, Mac, Linux) die automatisch zoekt op **Marktplaats**, **2dehands** en **Vinted** en je een melding stuurt zodra er een koopje opstaat.
 
-## Installeren
+## Installeren op je laptop
+
+Ga naar **Releases → latest** op GitHub en download:
+- Windows: `MarktSniper-1.0.0.msi`
+- Mac: `MarktSniper-1.0.0.dmg`
+- Linux: `marktsniper_1.0.0_amd64.deb`
+
+De laptop-app is precies dezelfde app. Sluit je het venster, dan blijft hij in het systeemvak (rechtsonder bij de klok)
+doorzoeken en krijg je meldingen. Echt afsluiten: rechtermuisklik op het icoontje → Afsluiten.
+
+## Installeren op Android
 
 1. Download [`release/MarktSniper.apk`](release/MarktSniper.apk) op je telefoon.
 2. Open het bestand en sta "installeren uit onbekende bronnen" toe.
@@ -22,5 +32,7 @@ Android-app die automatisch zoekt op **Marktplaats**, **2dehands** en **Vinted**
 ## Zelf bouwen
 
 ```bash
-./gradlew assembleRelease   # vereist Android SDK (sdk.dir in local.properties of ANDROID_HOME)
+./gradlew :app:assembleRelease          # Android, vereist Android SDK (sdk.dir in local.properties of ANDROID_HOME)
+./gradlew :desktop:run                    # laptop-app starten
+./gradlew :desktop:packageReleaseMsi      # Windows-installer (op Windows)
 ```
